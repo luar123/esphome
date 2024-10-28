@@ -6,6 +6,9 @@
 #include "zigbee.h"
 #include "esphome/core/log.h"
 #include "zigbee_helpers.h"
+#ifdef CONFIG_WIFI_COEX
+#include "esp_coexist.h"
+#endif
 
 #if !defined ZB_ED_ROLE
 #error Define ZB_ED_ROLE in idf.py menuconfig to compile light (End Device) source code.
@@ -367,6 +370,9 @@ void ZigBeeComponent::setup() {
       .radio_config = ESP_ZB_DEFAULT_RADIO_CONFIG(),
       .host_config = ESP_ZB_DEFAULT_HOST_CONFIG(),
   };
+#ifdef CONFIG_WIFI_COEX
+  ESP_ERROR_CHECK(esp_coex_wifi_i154_enable());
+#endif
   ESP_ERROR_CHECK(nvs_flash_init());
   ESP_ERROR_CHECK(esp_zb_platform_config(&config));
   xTaskCreate([](void *arg) { static_cast<ZigBeeComponent *>(arg)->esp_zb_task(); }, "Zigbee_main", 4096, this, 24,
