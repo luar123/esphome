@@ -34,11 +34,11 @@ from .zigbee_const import ATTR_TYPE, CLUSTER_ID, CLUSTER_ROLE, DEVICE_ID
 DEPENDENCIES = ["esp32"]
 
 CONF_ENDPOINTS = "endpoints"
-CONF_DEVICE_ID = "device_type"
-CONF_ENDPOINT_NUM = "num"
+CONF_DEVICE_TYPE = "device_type"
+CONF_NUM = "num"
 CONF_CLUSTERS = "clusters"
 CONF_ON_JOIN = "on_join"
-CONF_IDENT = "ident time"
+CONF_IDENT_TIME = "ident_time"
 CONF_MANUFACTURER = "manufacturer"
 CONF_ATTRIBUTES = "attributes"
 CONF_ROLE = "role"
@@ -95,15 +95,15 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(
                 CONF_DATE, default=datetime.datetime.now().strftime("%Y%m%d")
             ): cv.string,
-            cv.Optional(CONF_IDENT): cv.string,
+            cv.Optional(CONF_IDENT_TIME): cv.string,
             cv.Optional(CONF_POWER_SUPPLY, default=0): cv.int_,  # make enum
             cv.Optional(CONF_VERSION, default=0): cv.int_,
             cv.Optional(CONF_AREA, default=0): cv.int_,  # make enum
             cv.Required(CONF_ENDPOINTS): cv.ensure_list(
                 cv.Schema(
                     {
-                        cv.Required(CONF_DEVICE_ID): cv.enum(DEVICE_ID, upper=True),
-                        cv.Optional(CONF_ENDPOINT_NUM): cv.int_range(1, 240),
+                        cv.Required(CONF_DEVICE_TYPE): cv.enum(DEVICE_ID, upper=True),
+                        cv.Optional(CONF_NUM): cv.int_range(1, 240),
                         cv.Optional(CONF_CLUSTERS, default={}): cv.ensure_list(
                             cv.Schema(
                                 {
@@ -200,23 +200,19 @@ async def to_code(config):
             config[CONF_AREA],
         )
     )
-    if CONF_IDENT in config:
-        cg.add(var.set_ident_time(config[CONF_IDENT]))
+    if CONF_IDENT_TIME in config:
+        cg.add(var.set_ident_time(config[CONF_IDENT_TIME]))
     for ep in config[CONF_ENDPOINTS]:
         cg.add(
-            var.create_default_cluster(
-                ep[CONF_ENDPOINT_NUM], DEVICE_ID[ep[CONF_DEVICE_ID]]
-            )
+            var.create_default_cluster(ep[CONF_NUM], DEVICE_ID[ep[CONF_DEVICE_TYPE]])
         )
         cg.add(
-            var.add_cluster(
-                ep[CONF_ENDPOINT_NUM], CLUSTER_ID["BASIC"], CLUSTER_ROLE["SERVER"]
-            )
+            var.add_cluster(ep[CONF_NUM], CLUSTER_ID["BASIC"], CLUSTER_ROLE["SERVER"])
         )
-        if CONF_IDENT in config:
+        if CONF_IDENT_TIME in config:
             cg.add(
                 var.add_cluster(
-                    ep[CONF_ENDPOINT_NUM],
+                    ep[CONF_NUM],
                     CLUSTER_ID["IDENTIFY"],
                     CLUSTER_ROLE["SERVER"],
                 )
@@ -224,7 +220,7 @@ async def to_code(config):
         for cl in ep[CONF_CLUSTERS]:
             cg.add(
                 var.add_cluster(
-                    ep[CONF_ENDPOINT_NUM],
+                    ep[CONF_NUM],
                     CLUSTER_ID[cl[CONF_ID]],
                     CLUSTER_ROLE[cl[CONF_ROLE]],
                 )
@@ -233,7 +229,7 @@ async def to_code(config):
                 if CONF_VALUE in attr:
                     cg.add(
                         var.add_attr(
-                            ep[CONF_ENDPOINT_NUM],
+                            ep[CONF_NUM],
                             CLUSTER_ID[cl[CONF_ID]],
                             CLUSTER_ROLE[cl[CONF_ROLE]],
                             attr[CONF_ID],
@@ -243,7 +239,7 @@ async def to_code(config):
                 if CONF_REPORT in attr and attr[CONF_REPORT] is True:
                     cg.add(
                         var.set_report(
-                            ep[CONF_ENDPOINT_NUM],
+                            ep[CONF_NUM],
                             CLUSTER_ID[cl[CONF_ID]],
                             CLUSTER_ROLE[cl[CONF_ROLE]],
                             attr[CONF_ID],
@@ -257,7 +253,7 @@ async def to_code(config):
                     await cg.register_component(trigger, conf)
                     cg.add(
                         trigger.set_attr(
-                            ep[CONF_ENDPOINT_NUM],
+                            ep[CONF_NUM],
                             CLUSTER_ID[cl[CONF_ID]],
                             attr[CONF_ID],
                             attr[CONF_TYPE],
