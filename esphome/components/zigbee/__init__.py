@@ -79,7 +79,6 @@ def final_validate(config):
     if CONF_WIFI in fv.full_config.get():
         if CONF_AP in fv.full_config.get()[CONF_WIFI]:
             raise cv.Invalid("Zigbee can't be used together with an Wifi Access Point.")
-
     return config
 
 
@@ -180,9 +179,9 @@ async def to_code(config):
     add_idf_sdkconfig_option("CONFIG_ZB_ENABLED", True)
     add_idf_sdkconfig_option("CONFIG_ZB_ZED", True)
     add_idf_sdkconfig_option("CONFIG_ZB_RADIO_NATIVE", True)
-    if (CORE.config.get(CONF_WIFI, None)) is not None:
+    if CONF_WIFI in CORE.config:
         add_idf_sdkconfig_option("CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE", 4096)
-        cg.add_build_flag("-DCONFIG_WIFI_COEX")
+        cg.add_define("CONFIG_WIFI_COEX")
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
     if CONF_NAME not in config:
