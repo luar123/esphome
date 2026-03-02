@@ -81,8 +81,6 @@ void SnapClientComponent::setup() {
 }
 
 void SnapClientComponent::dump_config() {
-  this->refresh_snapserver_hostname_from_mdns_();
-
   char mac_address[18] = {0};
   uint8_t base_mac[6] = {0};
   esp_err_t mac_err = esp_efuse_mac_get_default(base_mac);
