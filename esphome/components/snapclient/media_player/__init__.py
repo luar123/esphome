@@ -52,7 +52,8 @@ CONFIG_SCHEMA = cv.All(
         {
             cv.GenerateID(): cv.declare_id(SnapClientComponent),
             cv.Optional(CONF_NAME): cv.string,
-            cv.Optional(CONF_HOSTNAME, default=0): cv.domain,
+            # Empty hostname means "discover via mDNS".
+            cv.Optional(CONF_HOSTNAME, default=""): cv.Any("", cv.domain),
             cv.Optional(CONF_PORT, default=1704): cv.port,
             cv.Required(CONF_I2S_DOUT_PIN): pins.internal_gpio_output_pin_number,
             cv.Optional(CONF_MUTE_PIN): pins.gpio_output_pin_schema,
@@ -88,24 +89,39 @@ async def to_code(config):
         add_idf_sdkconfig_option("CONFIG_SNAPCLIENT_USE_SOFT_VOL", True)
     if CONF_NAME not in config:
         config[CONF_NAME] = CORE.name or ""
-    add_idf_sdkconfig_option("CONFIG_SNAPSERVER_HOST", str(config[CONF_HOSTNAME]))
+
+    # Canonical behavior:
+    # - hostname == ""  -> mDNS discovery
+    # - hostname set    -> static host mode
+    use_mdns = config[CONF_HOSTNAME] == ""
+    if not use_mdns:
+        add_idf_sdkconfig_option("CONFIG_SNAPSERVER_HOST", str(config[CONF_HOSTNAME]))
     add_idf_sdkconfig_option("CONFIG_SNAPSERVER_PORT", int(config[CONF_PORT]))
-    if config[CONF_HOSTNAME] != 0:
-        add_idf_sdkconfig_option("CONFIG_SNAPSERVER_USE_MDNS", False)
+    add_idf_sdkconfig_option("CONFIG_SNAPSERVER_USE_MDNS", use_mdns)
     add_idf_sdkconfig_option("CONFIG_SNAPCLIENT_NAME", config[CONF_NAME])
     add_idf_sdkconfig_option("CONFIG_FREERTOS_TASK_NOTIFICATION_ARRAY_ENTRIES", 2)
     ethernet = CORE.config.get("ethernet")
     if ethernet:
         if ethernet.get(CONF_TYPE) in SPI_ETHERNET_TYPES:
             add_idf_sdkconfig_option("CONFIG_SNAPCLIENT_USE_SPI_ETHERNET", True)
+            cg.add_build_flag("-DCONFIG_SNAPCLIENT_USE_SPI_ETHERNET=1")
+            cg.add_build_flag("-DCONFIG_SNAPCLIENT_USE_INTERNAL_ETHERNET=0")
         else:
             add_idf_sdkconfig_option("CONFIG_SNAPCLIENT_USE_INTERNAL_ETHERNET", True)
+            cg.add_build_flag("-DCONFIG_SNAPCLIENT_USE_INTERNAL_ETHERNET=1")
+            cg.add_build_flag("-DCONFIG_SNAPCLIENT_USE_SPI_ETHERNET=0")
+    else:
+        cg.add_build_flag("-DCONFIG_SNAPCLIENT_USE_INTERNAL_ETHERNET=0")
+        cg.add_build_flag("-DCONFIG_SNAPCLIENT_USE_SPI_ETHERNET=0")
     wifi.enable_runtime_power_save_control()
 
     var = await media_player.new_media_player(config)
     await cg.register_component(var, config)
     await register_i2s_audio_component(var, config)
     cg.add(var.set_dout_pin(config[CONF_I2S_DOUT_PIN]))
+    cg.add(var.set_snapserver_hostname(config[CONF_HOSTNAME]))
+    cg.add(var.set_snapserver_port(config[CONF_PORT]))
+    cg.add(var.set_snapserver_use_mdns(use_mdns))
     if CONF_MUTE_PIN in config:
         pin = await cg.gpio_pin_expression(config[CONF_MUTE_PIN])
         cg.add(var.set_mute_pin(pin))

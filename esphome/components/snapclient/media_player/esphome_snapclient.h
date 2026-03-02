@@ -5,6 +5,8 @@
 #ifdef USE_ESP32
 #ifndef USE_I2S_LEGACY
 
+#include <string>
+
 #include "esphome/core/component.h"
 #include "esphome/components/media_player/media_player.h"
 #include "esphome/components/i2s_audio/i2s_audio.h"
@@ -30,9 +32,12 @@ class SnapClientComponent : public i2s_audio::I2SAudioOut, public media_player::
   void set_mute_pin(GPIOPin *mute_pin) { this->mute_pin_ = mute_pin; }
   void setup() override;
   void loop() override;
-  // void dump_config() override;
+  void dump_config() override;
   float get_setup_priority() const override { return setup_priority::AFTER_WIFI; }
   void set_dout_pin(uint8_t pin) { this->dout_pin_ = pin; }
+  void set_snapserver_hostname(const std::string &hostname) { this->snapserver_hostname_ = hostname; }
+  void set_snapserver_port(uint16_t port) { this->snapserver_port_ = port; }
+  void set_snapserver_use_mdns(bool use_mdns) { this->snapserver_use_mdns_ = use_mdns; }
 #ifdef USE_AUDIO_DAC
   void set_audio_dac(audio_dac::AudioDac *audio_dac) { this->audio_dac_ = audio_dac; }
 #endif
@@ -51,6 +56,7 @@ class SnapClientComponent : public i2s_audio::I2SAudioOut, public media_player::
 
   void set_mute_(bool mute);
   void set_volume_(float volume, bool publish = true);
+  void refresh_snapserver_hostname_from_mdns_();
 
   void dac_control_();
   bool has_lock_{false};
@@ -70,7 +76,12 @@ class SnapClientComponent : public i2s_audio::I2SAudioOut, public media_player::
   bool mute_state_{true};
   GPIOPin *mute_pin_{nullptr};
   uint8_t dout_pin_;
+  std::string snapserver_hostname_{};
+  uint16_t snapserver_port_{1704};
+  bool snapserver_use_mdns_{true};
   bool network_initialized_{false};
+  // Diagnostic helper: emit the network wait log only once while startup is gated.
+  bool waiting_for_network_logged_{false};
   audioDACdata_t dac_data_;
   audioDACdata_t dac_data_external_;
   SemaphoreHandle_t audio_dac_semaphore_;
