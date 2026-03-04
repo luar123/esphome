@@ -56,7 +56,6 @@ class SnapClientComponent : public i2s_audio::I2SAudioOut, public media_player::
 
   void set_mute_(bool mute);
   void set_volume_(float volume, bool publish = true);
-  void refresh_snapserver_hostname_from_mdns_();
 
   void dac_control_();
   bool has_lock_{false};
@@ -80,8 +79,6 @@ class SnapClientComponent : public i2s_audio::I2SAudioOut, public media_player::
   uint16_t snapserver_port_{1704};
   bool snapserver_use_mdns_{true};
   bool network_initialized_{false};
-  // Diagnostic helper: emit the network wait log only once while startup is gated.
-  bool waiting_for_network_logged_{false};
   audioDACdata_t dac_data_;
   audioDACdata_t dac_data_external_;
   SemaphoreHandle_t audio_dac_semaphore_;

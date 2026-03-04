@@ -17,7 +17,7 @@ from esphome.core import CORE
 CODEOWNERS = ["@luar123"]
 
 DEPENDENCIES = ["esp32", "i2s_audio"]
-AUTO_LOAD = ["socket"]
+AUTO_LOAD = ["mdns", "socket"]
 
 CONF_HOSTNAME = "hostname"
 CONF_MUTE_PIN = "mute_pin"
@@ -67,7 +67,6 @@ CONFIG_SCHEMA = cv.All(
 
 async def to_code(config):
     add_idf_component(name="espressif/esp-dsp", ref=">1.5.0")
-    add_idf_component(name="espressif/mdns", ref=">1.9.0")
     for component in [
         "dsp_processor",
         "flac",
@@ -90,9 +89,6 @@ async def to_code(config):
     if CONF_NAME not in config:
         config[CONF_NAME] = CORE.name or ""
 
-    # Canonical behavior:
-    # - hostname == ""  -> mDNS discovery
-    # - hostname set    -> static host mode
     use_mdns = config.get(CONF_HOSTNAME) is None
     if not use_mdns:
         add_idf_sdkconfig_option("CONFIG_SNAPSERVER_HOST", str(config[CONF_HOSTNAME]))

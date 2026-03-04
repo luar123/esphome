@@ -3,7 +3,6 @@
 #ifndef USE_I2S_LEGACY
 #include "esphome_snapclient.h"
 #include "esphome/core/log.h"
-#include "esphome/core/hal.h"
 #include "esphome/components/network/util.h"
 #include "esphome/components/media_player/media_player.h"
 #ifdef USE_WIFI
@@ -12,14 +11,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include <cstdio>
-
 #include "driver/i2s_std.h"
-#include "esp_err.h"
-#include "esp_mac.h"
-#if CONFIG_SNAPSERVER_USE_MDNS
-#include "mdns.h"
-#endif
 #if CONFIG_USE_DSP_PROCESSOR
 #include "dsp_processor.h"
 #endif
@@ -44,13 +36,13 @@ static void player_state_changed() {
 }
 
 void SnapClientComponent::setup() {
-  ESP_LOGD(TAG, "SnapClient setup() executing");
+  ESP_LOGV(TAG, "setup() executing");
   if (!this->lock_()) {
     this->mark_failed();
     return;
   }
   global_snapclient = this;
-  ESP_LOGD(TAG, "init player");
+  ESP_LOGD(TAG, "Init player");
   i2s_std_gpio_config_t i2s_pin_config0 = this->parent_->get_pin_config();
   i2s_pin_config0.dout = (gpio_num_t) this->dout_pin_;
 
@@ -76,31 +68,15 @@ void SnapClientComponent::setup() {
   dsp_processor_init();
 #endif
   this->network_initialized_ = false;
-  this->waiting_for_network_logged_ = false;
   this->state = media_player::MEDIA_PLAYER_STATE_OFF;
+  ESP_LOGV(TAG, "Waiting for network before starting");
 }
 
 void SnapClientComponent::dump_config() {
-  char mac_address[18] = {0};
-  uint8_t base_mac[6] = {0};
-  esp_err_t mac_err = esp_efuse_mac_get_default(base_mac);
-  if (mac_err != ESP_OK) {
-#if CONFIG_SNAPCLIENT_USE_INTERNAL_ETHERNET || CONFIG_SNAPCLIENT_USE_SPI_ETHERNET
-    mac_err = esp_read_mac(base_mac, ESP_MAC_ETH);
-#else
-    mac_err = esp_read_mac(base_mac, ESP_MAC_WIFI_STA);
-#endif
-  }
-  if (mac_err == ESP_OK) {
-    snprintf(mac_address, sizeof(mac_address), "%02X:%02X:%02X:%02X:%02X:%02X",
-             base_mac[0], base_mac[1], base_mac[2], base_mac[3], base_mac[4], base_mac[5]);
-  }
-
   ESP_LOGCONFIG(TAG, "Snapclient Media Player:");
   ESP_LOGCONFIG(TAG, "  I2S Port: %u", this->parent_->get_port());
-  ESP_LOGCONFIG(TAG, "  I2S Lock Held: %s", YESNO(this->has_lock_));
-  ESP_LOGCONFIG(TAG, "  I2S Data Output Pin: %u", this->dout_pin_); //uint8_t
-  if (this->mute_pin_) { //GPIOPin
+  ESP_LOGCONFIG(TAG, "  I2S Data Output Pin: %u", this->dout_pin_);  // uint8_t
+  if (this->mute_pin_) {                                             // GPIOPin
     LOG_PIN("  Mute Pin: ", this->mute_pin_);
   } else {
     ESP_LOGCONFIG(TAG, "  Mute Pin: None");
@@ -110,51 +86,19 @@ void SnapClientComponent::dump_config() {
 #else
   ESP_LOGCONFIG(TAG, "  Audio DAC: None");
 #endif
-  ESP_LOGCONFIG(TAG, "  Mute State: %s", ONOFF(this->mute_state_));
-  ESP_LOGCONFIG(TAG, "  Volume: %.0f%%", this->volume_ * 100.0f);
   ESP_LOGCONFIG(TAG, "  Client Name: %s", CONFIG_SNAPCLIENT_NAME);
-  if (mac_err == ESP_OK) {
-    ESP_LOGCONFIG(TAG, "  MAC Address: %s", mac_address);
-  } else {
-    ESP_LOGCONFIG(TAG, "  MAC Address: awaiting detection (%s)",
-                  esp_err_to_name(mac_err));
-  }
-  ESP_LOGCONFIG(TAG, "  Network Initialized: %s", YESNO(this->network_initialized_));
   ESP_LOGCONFIG(TAG, "  Discovery Mode: %s", this->snapserver_use_mdns_ ? "mDNS" : "Static Host");
-  if (!this->snapserver_hostname_.empty()) {
-    ESP_LOGCONFIG(TAG, "  Snapserver Hostname: %s", this->snapserver_hostname_.c_str());
-  } else if (this->snapserver_use_mdns_) {
-    ESP_LOGCONFIG(TAG, "  Snapserver Hostname: awaiting mDNS discovery");
-  } else {
-    ESP_LOGCONFIG(TAG, "  Snapserver Hostname: not configured");
-  }
+  ESP_LOGCONFIG(TAG, "  Snapserver Hostname: %s", this->snapserver_hostname_.c_str());
   ESP_LOGCONFIG(TAG, "  Snapserver Port: %u", this->snapserver_port_);
-
 }
 
 void SnapClientComponent::loop() {
-  static uint32_t last_hb = 0;
-  if (millis() - last_hb > 5000) {
-    ESP_LOGV(TAG, "SnapClient heartbeat: network=%d state=%d lock=%d", this->network_initialized_, this->state, this->has_lock_);
-    last_hb = millis();
-  }
-
-  if (!this->network_initialized_) {
-    const bool connected = network::is_connected();
-    // Keep original behavior: only start snapclient after ESPHome reports network connectivity.
-    if (!connected) {
-      if (!this->waiting_for_network_logged_) {
-        ESP_LOGI(TAG, "Waiting for network before starting snapclient");
-        this->waiting_for_network_logged_ = true;
-      }
-    } else {
-      this->refresh_snapserver_hostname_from_mdns_();
-      ESP_LOGI(TAG, "Network connected, starting snapclient");
-      start_snapcast();
-      this->network_initialized_ = true;
-      this->state = this->get_state_from_player_state_(this->player_state);
-      this->publish_state();
-    }
+  if (!this->network_initialized_ && network::is_connected()) {
+    ESP_LOGV(TAG, "Network connected, starting snapclient");
+    start_snapcast();
+    this->network_initialized_ = true;
+    this->state = this->get_state_from_player_state_(this->player_state);
+    this->publish_state();
   }
   if (xQueueReceive(this->audio_q_hdl_, &(this->dac_data_), 0) == pdTRUE) {
     this->dac_control_();
@@ -181,55 +125,6 @@ void SnapClientComponent::loop() {
       this->publish_state();
     }
   }
-}
-
-void SnapClientComponent::refresh_snapserver_hostname_from_mdns_() {
-#if CONFIG_SNAPSERVER_USE_MDNS
-  if (!this->snapserver_use_mdns_ || !this->snapserver_hostname_.empty() || !network::is_connected()) {
-    return;
-  }
-
-  esp_err_t mdns_err = mdns_init();
-  if (mdns_err != ESP_OK && mdns_err != ESP_ERR_INVALID_STATE) {
-    ESP_LOGV(TAG, "mDNS init failed while refreshing hostname: %s", esp_err_to_name(mdns_err));
-    return;
-  }
-
-  mdns_result_t *results = nullptr;
-  mdns_err = mdns_query_ptr("_snapcast", "_tcp", 250, 3, &results);
-  if (mdns_err != ESP_OK || results == nullptr) {
-    if (results != nullptr) {
-      mdns_query_results_free(results);
-    }
-    return;
-  }
-
-  uint32_t result_count = 0;
-  for (mdns_result_t *result = results; result != nullptr; result = result->next) {
-    result_count++;
-    if (result->hostname != nullptr && result->hostname[0] != '\0') {
-      this->snapserver_hostname_ = result->hostname;
-      break;
-    }
-  }
-
-  ESP_LOGI(TAG, "mDNS returned %u snapcast service result(s)", (unsigned int) result_count);
-
-  if (this->snapserver_hostname_.empty()) {
-    for (mdns_result_t *result = results; result != nullptr; result = result->next) {
-      if (result->instance_name != nullptr && result->instance_name[0] != '\0') {
-        this->snapserver_hostname_ = result->instance_name;
-        break;
-      }
-    }
-  }
-
-  mdns_query_results_free(results);
-
-  if (!this->snapserver_hostname_.empty()) {
-    ESP_LOGI(TAG, "Snapserver discovered via mDNS: %s", this->snapserver_hostname_.c_str());
-  }
-#endif
 }
 
 media_player::MediaPlayerState SnapClientComponent::get_state_from_player_state_(player_state_e state) {
