@@ -53,7 +53,7 @@ CONFIG_SCHEMA = cv.All(
             cv.GenerateID(): cv.declare_id(SnapClientComponent),
             cv.Optional(CONF_NAME): cv.string,
             # Empty hostname means "discover via mDNS".
-            cv.Optional(CONF_HOSTNAME, default=""): cv.Any("", cv.domain),
+            cv.Optional(CONF_HOSTNAME): cv.domain,
             cv.Optional(CONF_PORT, default=1704): cv.port,
             cv.Required(CONF_I2S_DOUT_PIN): pins.internal_gpio_output_pin_number,
             cv.Optional(CONF_MUTE_PIN): pins.gpio_output_pin_schema,
@@ -93,7 +93,7 @@ async def to_code(config):
     # Canonical behavior:
     # - hostname == ""  -> mDNS discovery
     # - hostname set    -> static host mode
-    use_mdns = config[CONF_HOSTNAME] == ""
+    use_mdns = config.get(CONF_HOSTNAME) is None
     if not use_mdns:
         add_idf_sdkconfig_option("CONFIG_SNAPSERVER_HOST", str(config[CONF_HOSTNAME]))
     add_idf_sdkconfig_option("CONFIG_SNAPSERVER_PORT", int(config[CONF_PORT]))
@@ -103,23 +103,16 @@ async def to_code(config):
     ethernet = CORE.config.get("ethernet")
     if ethernet:
         if ethernet.get(CONF_TYPE) in SPI_ETHERNET_TYPES:
-            add_idf_sdkconfig_option("CONFIG_SNAPCLIENT_USE_SPI_ETHERNET", True)
             cg.add_build_flag("-DCONFIG_SNAPCLIENT_USE_SPI_ETHERNET=1")
-            cg.add_build_flag("-DCONFIG_SNAPCLIENT_USE_INTERNAL_ETHERNET=0")
         else:
-            add_idf_sdkconfig_option("CONFIG_SNAPCLIENT_USE_INTERNAL_ETHERNET", True)
             cg.add_build_flag("-DCONFIG_SNAPCLIENT_USE_INTERNAL_ETHERNET=1")
-            cg.add_build_flag("-DCONFIG_SNAPCLIENT_USE_SPI_ETHERNET=0")
-    else:
-        cg.add_build_flag("-DCONFIG_SNAPCLIENT_USE_INTERNAL_ETHERNET=0")
-        cg.add_build_flag("-DCONFIG_SNAPCLIENT_USE_SPI_ETHERNET=0")
     wifi.enable_runtime_power_save_control()
 
     var = await media_player.new_media_player(config)
     await cg.register_component(var, config)
     await register_i2s_audio_component(var, config)
     cg.add(var.set_dout_pin(config[CONF_I2S_DOUT_PIN]))
-    cg.add(var.set_snapserver_hostname(config[CONF_HOSTNAME]))
+    cg.add(var.set_snapserver_hostname(config.get(CONF_HOSTNAME, "")))
     cg.add(var.set_snapserver_port(config[CONF_PORT]))
     cg.add(var.set_snapserver_use_mdns(use_mdns))
     if CONF_MUTE_PIN in config:
