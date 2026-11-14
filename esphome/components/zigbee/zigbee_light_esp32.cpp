@@ -312,11 +312,12 @@ void ZigbeeLight::set_attr_internal() {
           if (ontime > 0) {
             ezb_err_t ret = ezb_zcl_on_off_off_cmd_req(&cmd_req);  // send off command
             esp_zigbee_lock_release();
+            ESP_LOGI(TAG, "Err %u", ret);
             return;  // proceed in next loop iteration so the off command is processed.
           }
           ezb_err_t ret = ezb_zcl_on_off_on_cmd_req(&cmd_req);  // send on command
-          ESP_LOGI(TAG, "Err %u", ret);
           esp_zigbee_lock_release();
+          ESP_LOGI(TAG, "Err %u", ret);
           return;  // proceed in next loop iteration so the on command is processed.
         }
       }
