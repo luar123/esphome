@@ -212,8 +212,11 @@ void ZigbeeLight::make_call_() {
 }
 
 void ZigbeeLight::apply_on_off_(bool on) {
-  if (this->block_zigbee_)
+  if (this->block_zigbee_) {
+    this->set_attr_requested_ = true;
+    ESP_LOGD(TAG, "discard: %s", on ? "ON" : "OFF");
     return;
+  }
   this->next_call_.set_state(on);
   ESP_LOGD(TAG, "set state");
   if (!on) {                                 // recover level
@@ -237,8 +240,10 @@ void ZigbeeLight::apply_on_off_(bool on) {
 }
 
 void ZigbeeLight::apply_level_(uint8_t level) {
-  if (this->block_zigbee_)
+  if (this->block_zigbee_) {
+    this->set_attr_requested_ = true;
     return;
+  }
   float brightness = level_to_brightness(level);
   this->next_call_.set_brightness(brightness);
   ESP_LOGD(TAG, "set brightness: %f", brightness);
@@ -246,15 +251,19 @@ void ZigbeeLight::apply_level_(uint8_t level) {
 }
 
 void ZigbeeLight::apply_x_(uint16_t x) {
-  if (this->block_zigbee_)
+  if (this->block_zigbee_) {
+    this->set_attr_requested_ = true;
     return;
+  }
   this->x_ = x;
   this->apply_color_();
 }
 
 void ZigbeeLight::apply_y_(uint16_t y) {
-  if (this->block_zigbee_)
+  if (this->block_zigbee_) {
+    this->set_attr_requested_ = true;
     return;
+  }
   this->y_ = y;
   this->apply_color_();
 }
@@ -275,7 +284,12 @@ void ZigbeeLight::set_attr_internal() {
   this->set_attr_requested_ = true;
   this->block_zigbee_ = true;  // prevent race conditions
   this->enable_loop();
+  auto values = light_state_->remote_values;
+  const auto color_mode = values.get_color_mode();
+  bool on = values.is_on();
   if (this->zb_->is_started() && esp_zigbee_lock_acquire(10 / portTICK_PERIOD_MS)) {
+    // the sdk internal state machine can only be stopped by sending local zigbee commands. We need to check
+    // if a transition is active and send the appropiate commands. Those are applied before set_attr_value.
     if (ezb_zcl_get_cluster_desc(this->endpoint_id_, EZB_ZCL_CLUSTER_ID_ON_OFF, EZB_ZCL_CLUSTER_SERVER) != NULL) {
       ezb_zcl_attr_desc_t on_time =
           ezb_zcl_get_attr_desc(this->endpoint_id_, EZB_ZCL_CLUSTER_ID_ON_OFF, EZB_ZCL_CLUSTER_SERVER,
@@ -289,15 +303,22 @@ void ZigbeeLight::set_attr_internal() {
         uint16_t offtime = 0;
         ezb_zcl_attr_desc_get_value(off_time, &offtime);
         if (ontime > 0 || offtime > 0) {
-          // on with timed off in progress, send on
+          // on with timed off in progress, send off then on
           ezb_zcl_on_off_cmd_t cmd_req = {};
           cmd_req.cmd_ctrl.src_ep = this->endpoint_id_;
           cmd_req.cmd_ctrl.dst_ep = this->endpoint_id_;
           cmd_req.cmd_ctrl.dst_addr.addr_mode = EZB_ADDR_MODE_SHORT;
           cmd_req.cmd_ctrl.dst_addr.u.short_addr = ezb_get_short_address();
           cmd_req.cmd_ctrl.dis_default_rsp = true;
-          ezb_err_t ret = ezb_zcl_on_off_on_cmd_req(&cmd_req);  // send on_off cluster command
+          if (ontime > 0) {
+            ezb_err_t ret = ezb_zcl_on_off_off_cmd_req(&cmd_req);  // send off command
+            esp_zigbee_lock_release();
+            return;  // proceed in next loop iteration so the off command is processed.
+          }
+          ezb_err_t ret = ezb_zcl_on_off_on_cmd_req(&cmd_req);  // send on command
           ESP_LOGI(TAG, "Err %u", ret);
+          esp_zigbee_lock_release();
+          return;  // proceed in next loop iteration so the on command is processed.
         }
       }
     }
@@ -343,9 +364,6 @@ void ZigbeeLight::set_attr_internal() {
         }
       }
     }
-    auto values = light_state_->remote_values;
-    const auto color_mode = values.get_color_mode();
-    bool on = values.is_on();
     ezb_zcl_set_attr_value(this->endpoint_id_, EZB_ZCL_CLUSTER_ID_ON_OFF, EZB_ZCL_CLUSTER_SERVER,
                            EZB_ZCL_ATTR_ON_OFF_ON_OFF_ID, EZB_ZCL_STD_MANUF_CODE, &on, false);
     ESP_LOGI(TAG, "Set %s", values.is_on() ? "ON" : "OFF");
