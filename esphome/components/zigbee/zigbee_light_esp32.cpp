@@ -276,7 +276,6 @@ void ZigbeeLight::apply_color_() {
       ESP_LOGD(TAG, "set color: %f, %f, %f", r, g, b);
       this->schedule_call_();
     }
-    this->x_ = this->y_ = 0xFFFF;
   }
 }
 
