@@ -368,7 +368,7 @@ def validate_light_esp32(config: ConfigType) -> ConfigType:
     }
     config["zigbee_ep"] = ep
     setup_attributes(config, ep[CONF_CLUSTERS])
-    add_ep(ep, config.get(CONF_ENDPOINT), config.get(CONF_USE_DEVICE_TYPE))
+    add_ep(ep, config.get(CONF_ENDPOINT), config.get(CONF_USE_DEVICE_TYPE, True))
     config[CONF_ZIGBEE_LIGHT] = cv.declare_id(ZigbeeLight)(None)
     config[CONF_ZIGBEE_ID] = cv.use_id(ZigbeeComponent)(None)
     return config

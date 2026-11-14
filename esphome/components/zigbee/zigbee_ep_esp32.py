@@ -42,6 +42,8 @@ from .const_esp32 import (
     SCALE,
 )
 
+_KEY_EP_REFS = "ep_refs"
+
 # endpoint configs:
 ANALOG_INPUT_EP = {
     CONF_CLUSTERS: [
@@ -408,6 +410,8 @@ def _merge_endpoints(
     if ep.get(DEVICE_TYPE):
         existing_ep[DEVICE_TYPE] = ep[DEVICE_TYPE]
     existing_ep[CONF_CLUSTERS].extend(ep[CONF_CLUSTERS])
+    ep_list: list[dict] = existing_ep.setdefault(_KEY_EP_REFS, [])
+    ep_list.append(ep)
     return True
 
 
@@ -474,6 +478,10 @@ def create_ep(router: bool) -> None:
         for ep in ep_list_new:
             ep_num = _get_next_ep_num(eps)
             ep["num"] = ep_num
+            if _KEY_EP_REFS in ep:
+                for ep_ref in ep[_KEY_EP_REFS]:
+                    ep_ref["num"] = ep_num
+                del ep[_KEY_EP_REFS]
             ep_dict[ep_num] = ep
 
         # clear list so that it is not processed again
